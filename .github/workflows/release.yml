@@ -16,12 +16,12 @@ permissions:
 
 env:
   OPENCODE_CHANNEL: prod
-  LARPCODE_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/LarpCode-Setup.exe
+  LARPCODE_UPDATE_URL: https://github.com/Dekrypte0/LarpCode/releases/latest/download/LarpCode-Setup.exe
 
 jobs:
   build:
     name: build
-    if: github.repository == 'Tazmyan/LarpCode'
+    if: github.repository == 'Dekrypte0/LarpCode'
     runs-on: windows-latest
     timeout-minutes: 60
     outputs:
@@ -109,7 +109,7 @@ jobs:
   publish:
     name: publish
     needs: build
-    if: github.repository == 'Tazmyan/LarpCode' && github.ref_type == 'tag'
+    if: github.repository == 'Dekrypte0/LarpCode' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
