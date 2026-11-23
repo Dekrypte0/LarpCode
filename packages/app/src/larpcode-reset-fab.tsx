@@ -53,9 +53,8 @@ export function LarpcodeWebsiteFab() {
 // Windows window chrome (min / max / close at top-right) and the composer
 // (bottom-right).
 //
-// The server performs the reset in-process: it snapshots sessions, wipes
-// local usage state, rotates the fingerprint and rotates egress (Tor/WARP
-// when available). The renderer reloads when the call returns.
+// The server clears local usage counters and cooldowns. Sessions and
+// provider-side limits are left untouched.
 export function LarpcodeResetFab() {
   const servers = useServers()
   const [s, set] = createStore({
@@ -67,8 +66,7 @@ export function LarpcodeResetFab() {
     phase: "" as "" | "reset",
   })
   const trigger = async () => {
-    // Full reset every time. The shift-click distinction was removed
-    // because a stuck modifier looked like a broken pill.
+    // Reset local usage state only; this must not remove chat history.
     set({ running: true, done: false, failed: false, count: 0, errorMsg: "", phase: "reset" })
     let hit = 0
     let lastError = ""
@@ -81,84 +79,20 @@ export function LarpcodeResetFab() {
         if (conn.http.password)
           headers.authorization = `Basic ${authTokenFromCredentials({ password: conn.http.password })}`
 
-        // Snapshot before wipe. A 500 from the sidecar here must not short-
-        // circuit the reset: a disk-space or VACUUM-INTO failure during
-        // backup would otherwise eat the reset without rotating the egress
-        // IP. Snapshot is a nice-to-have; the reset itself must not depend
-        // on it. Log the failure to the browser console and keep going.
-        try {
-          const exportUrl = new URL(`/_larpcode/export-sessions`, conn.http.url)
-          const exportResponse = await fetch(exportUrl, { method: "POST", headers })
-          if (!exportResponse.ok) {
-            let msg = ""
-            try {
-              const body = (await exportResponse.json()) as { error?: string }
-              if (body?.error) msg = body.error
-            } catch {}
-            if (!msg) msg = `export HTTP ${exportResponse.status}`
-            // eslint-disable-next-line no-console
-            console.warn(`[larpcode-reset] snapshot failed, continuing with reset: ${msg}`)
-          }
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.warn(`[larpcode-reset] snapshot threw, continuing with reset:`, e)
-        }
-
-        // Pill ships mode=fresh. The server performs the full ritual
-        // in-process: export-sessions just wrote a backup, then the handler
-        // wipes local tables, rotates the fingerprint and rotates egress
-        // before returning. The renderer reloads when the call completes.
-        const url = new URL(`/_larpcode/reset-limits?mode=fresh`, conn.http.url)
+        const url = new URL("/_larpcode/reset-limits", conn.http.url)
         // No `credentials: "include"`: Electron's main process injects the
         // sidecar Authorization header for every renderer→loopback request
         // (see packages/desktop/src/main/windows/security.ts), and adding
         // credentials here forces a CORS preflight the server does not allow.
         const response = await fetch(url, { method: "POST", headers })
         if (response.ok) {
-          // Read body FIRST so we can tell real success from a catchCause
-          // fallback (ok:false with handler_error). Only count as a hit
-          // when body.ok is truthy; otherwise fall through to the error
-          // path so the pill shows "failed" and we don't reload into a
-          // broken state.
-          type ResetBody = {
-            ok?: boolean
-            warp?: {
-              status?: string
-              mode?: string
-              ip_before?: string | null
-              ip_after?: string
-              reason?: string
-              error?: string
-              step?: string
-            }
-            handler_error?: string
-            error?: string
-          }
-          let body: ResetBody | null = null
-          try {
-            body = (await response.json()) as ResetBody
-          } catch {
-            /* non-json body */
-          }
-          if (body && body.ok === false) {
-            lastError = body.error || body.handler_error || "reset failed"
+          const body = await response.json().catch(() => undefined)
+          if (body?.ok !== true) {
+            lastError = String(body?.error || body?.handler_error || "reset failed")
             continue
           }
           hit++
-          const warp = body?.warp
-          const bits: string[] = []
-          if (warp?.status === "rotated" && warp.ip_after) {
-            bits.push(`IP ${warp.ip_before ?? "?"} → ${warp.ip_after}`)
-          } else if (warp?.status === "same_ip" && warp.ip_after) {
-            bits.push(`Egress IP unchanged: ${warp.ip_after}`)
-          } else if (warp?.status === "unverified" && warp.ip_after) {
-            bits.push(`IP unverified (now ${warp.ip_after})`)
-          } else if (warp?.status === "skipped") {
-            bits.push(`Egress skipped: ${warp.reason ?? "(no reason)"}`)
-          } else if (warp?.status === "failed") {
-            bits.push(`Egress ${warp.step ?? "?"}: ${warp.error ?? "failed"}`)
-          }
-          lastError = bits.join(" · ")
+          lastError = ""
           continue
         }
         // Prefer a backend-supplied error message. When the response has no
@@ -182,8 +116,7 @@ export function LarpcodeResetFab() {
         throw new Error(lastError || "reset failed")
       }
       set({ running: false, done: true, failed: false, count: hit, errorMsg: lastError, phase: "" })
-      // Let the success state render briefly, then reload so the renderer
-      // re-fetches the wiped state instead of showing stale sessions.
+      // Refresh usage totals after the local counters are cleared.
       setTimeout(() => {
         if (typeof window !== "undefined") window.location.reload()
       }, 3000)
@@ -214,7 +147,7 @@ export function LarpcodeResetFab() {
       onClick={() => trigger()}
       disabled={s.running || s.done}
       aria-busy={s.running}
-      aria-label="Reset usage and restart with a fresh client identity"
+      aria-label="Reset local usage counters and cooldowns"
       title={s.errorMsg || undefined}
       class="group fixed bottom-4 left-4 z-[9999] inline-flex h-8 w-[8rem] items-center gap-1.5 rounded-full border border-v2-border-border-muted bg-v2-background-bg-layer-02 px-3 text-[11px] leading-4 font-[530] text-v2-text-text-muted shadow-sm transition-[background-color,border-color,color] duration-150 ease-out hover:border-v2-border-border-base hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-border-border-focus disabled:cursor-wait disabled:opacity-70 motion-reduce:transition-none [app-region:no-drag]"
       classList={{

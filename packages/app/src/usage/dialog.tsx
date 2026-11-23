@@ -456,10 +456,9 @@ function UsageFrame(props: { children: JSX.Element; footer?: JSX.Element }) {
       // endpoint to call.
       const conn = server.conn
       if (!("http" in conn) || !conn.http?.url) return
-      // mode=fresh runs the full reset in-process: snapshot, local table
-      // wipe, fingerprint rotation and egress rotation. Without the mode
-      // param the handler only zeroes DB counters locally.
-      const url = new URL("/_larpcode/reset-limits?mode=fresh", conn.http.url)
+      // A bare POST clears local usage counters and cooldowns without
+      // deleting sessions or changing provider-side limits.
+      const url = new URL("/_larpcode/reset-limits", conn.http.url)
       const headers: Record<string, string> = { "content-type": "application/json" }
       if (conn.http.password)
         headers.authorization = `Basic ${authTokenFromCredentials({ password: conn.http.password })}`
@@ -468,14 +467,11 @@ function UsageFrame(props: { children: JSX.Element; footer?: JSX.Element }) {
       // (see packages/desktop/src/main/windows/security.ts), and adding
       // credentials here forces a CORS preflight the server does not allow.
       const response = await fetch(url, { method: "POST", headers })
-      if (!response.ok) {
+      const body = await response.json().catch(() => undefined)
+      if (!response.ok || body?.ok !== true) {
         // Surface the backend-supplied error so the user sees the real
         // reason instead of a generic "Reset failed, retry".
-        let msg = `HTTP ${response.status}`
-        try {
-          const body = (await response.json()) as { error?: string }
-          if (body?.error) msg = body.error
-        } catch {}
+        const msg = body?.error || body?.handler_error || `HTTP ${response.status}`
         throw new Error(msg)
       }
       setResetState({ running: false, done: true, failed: false })

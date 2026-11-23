@@ -150,9 +150,8 @@ data of an OpenCode installation on the same machine.
   local agent runtime, with a LarpCode interface.
 - **Windows desktop app** — a normal installer, Start Menu shortcuts, and an
   in-app updater.
-- **Fresh reset** — backs up local sessions, clears local usage data, rotates
-  the local client identity, and can rotate your network egress if you have
-  configured it.
+- **Usage reset** — clears local usage totals and cooldown state without
+  deleting sessions or changing limits enforced by an AI provider.
 - **Network options** — optional Tor and SOCKS5 routing for supported requests.
 - **Usage dashboard** — see local token and cost estimates and reset the local
   counters when you want a clean slate.
